@@ -47,7 +47,7 @@ def split_questions(text):
     # Regex pattern to split based on questions starting with numbers (1., 2., etc.)
     question_pattern = r'\d+\.\s+'
     questions = re.split(question_pattern, text)
-    # Remove empty strings caused by split
+    # Remove empty strings caused by split, since this was a problem
     questions = [q.strip() for q in questions if q.strip()]
     return questions
 
