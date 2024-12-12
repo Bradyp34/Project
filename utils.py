@@ -66,12 +66,21 @@ def split_questions(text):
     Returns:
         list: A list of question strings.
     """
-    question_pattern = r'\d+\.\s+'
+    # Adjust the regex to ensure question numbers are not preceded by letters.
+    question_pattern = r'(?<![A-Za-z])\d+\.\s+'
     parts = re.split(question_pattern, text)
+
     # If no pattern found, return empty list
     if len(parts) == 1 and not re.search(question_pattern, text):
         return []
+
+    # Strip whitespace and remove empty entries
     questions = [q.strip() for q in parts if q.strip()]
+
+    # Filter out entries that are just something like '1.' or '2.' with no actual text
+    # This matches lines that are purely digits followed by a dot, with no extra text.
+    questions = [q for q in questions if not re.match(r'^\d+\.$', q)]
+
     return questions
 
 def parse_page_numbers(page_input):
@@ -83,19 +92,28 @@ def parse_page_numbers(page_input):
 
     Returns:
         list of int: A sorted list of unique page numbers.
+    
+    Raises:
+        ValueError: If a page range is invalid (start > end).
     """
     pages = set()
+    if not page_input.strip():
+        return []
+    
     for part in page_input.split(","):
         part = part.strip()
+        if not part:
+            continue
         if "-" in part:
-            start, end = part.split("-")
-            start, end = start.strip(), end.strip()
-            start, end = int(start), int(end)
+            start_str, end_str = part.split("-")
+            start_str, end_str = start_str.strip(), end_str.strip()
+            start, end = int(start_str), int(end_str)
+            if start > end:
+                raise ValueError(f"Start page {start} cannot be greater than end page {end}.")
             pages.update(range(start, end + 1))
         else:
             # Only add if not empty and is a valid integer
-            if part:
-                pages.add(int(part))
+            pages.add(int(part))
     return sorted(pages)
 
 def validate_page_input(page_input):

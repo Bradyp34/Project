@@ -211,3 +211,98 @@ def test_query_aiml_api_multiple_questions(mock_openai_class):
     result = query_aiml_api(mock_api, "system prompt", "user input", 2)
     assert "What is AI?" in result
     assert "How does AI differ from ML?" in result
+
+import pytest
+from unittest.mock import patch, MagicMock
+import re
+from Project.utils import extract_text_from_pdf, split_questions, parse_page_numbers, query_aiml_api
+
+### Additional tests for parse_page_numbers ###
+
+def test_parse_page_numbers_large_range():
+    input_str = "1-3, 100-102"
+    # Should include 1,2,3 and 100,101,102
+    expected = [1, 2, 3, 100, 101, 102]
+    assert parse_page_numbers(input_str) == expected
+
+def test_parse_page_numbers_extra_spaces():
+    input_str = "  4 - 6  ,  10 ,   12 -15 "
+    # After stripping, we should get pages 4,5,6 and 10, and 12 to 15
+    expected = [4, 5, 6, 10, 12, 13, 14, 15]
+    assert parse_page_numbers(input_str) == expected
+
+def test_parse_page_numbers_invalid_range():
+    input_str = "10-8"
+    # Start page cannot be greater than end page
+    # Should raise ValueError
+    with pytest.raises(ValueError):
+        parse_page_numbers(input_str)
+
+### Additional tests for split_questions ###
+
+def test_split_questions_already_numbered():
+    # If the text already starts with a number but no dot-space pattern, it should not split
+    text = "1 This is not following the pattern. 2 Another line without pattern."
+    # No "digit + dot + space" pattern found
+    assert split_questions(text) == []
+
+def test_split_questions_only_numbers():
+    # If the text contains lines like "1." but with no question following
+    text = "1.\n2.\n3."
+    # Splitting might result in empty strings after splitting
+    # Expecting empty because no actual questions follow the pattern
+    assert split_questions(text) == []
+
+def test_split_questions_complex_format():
+    text = "1. What is Python?\n\nAdditional info\n2. Explain decorators in Python?\n3. How does list comprehension work?\n\nSome trailing text"
+    expected = [
+        "What is Python?\n\nAdditional info",
+        "Explain decorators in Python?",
+        "How does list comprehension work?\n\nSome trailing text"
+    ]
+    assert split_questions(text) == expected
+
+def test_split_questions_misaligned_numbers():
+    # If the text has something like "Q1." which should not be split,
+    # and a valid "2. " somewhere.
+    text = "Q1. What is Python? 2. Explain decorators in Python."
+    # According to the pattern \d+\.\s+, "2." will cause a split, but "Q1." won't.
+    # The first split will occur before "2." leaving Q1. question intact in the first part.
+    # Splitting on '2. ':
+    # parts = ["Q1. What is Python?", "Explain decorators in Python."]
+    expected = ["Q1. What is Python?", "Explain decorators in Python."]
+    assert split_questions(text) == expected
+
+@patch("openai.OpenAI")
+def test_query_aiml_api_no_questions(mock_openai_class):
+    # If num_questions is zero (even if not logical), check behavior
+    # We assume the function still tries to call the API.
+    mock_api = MagicMock()
+    mock_completion = MagicMock()
+    mock_choice = MagicMock()
+    mock_message = MagicMock(content="")
+    mock_choice.message = mock_message
+    mock_completion.choices = [mock_choice]
+    mock_api.chat.completions.create.return_value = mock_completion
+    mock_openai_class.return_value = mock_api
+
+    # Even though 0 questions may not make sense, we handle gracefully
+    result = query_aiml_api(mock_api, "system prompt", "user input", 0)
+    assert result == ""
+
+@patch("openai.OpenAI")
+def test_query_aiml_api_special_characters(mock_openai_class):
+    # Test handling of special characters in user_input
+    mock_api = MagicMock()
+    mock_completion = MagicMock()
+    mock_choice = MagicMock()
+    content = "1. ¿Qué es la IA?\n2. Décrire l'apprentissage automatique?"
+    mock_message = MagicMock(content=content)
+    mock_choice.message = mock_message
+    mock_completion.choices = [mock_choice]
+    mock_api.chat.completions.create.return_value = mock_completion
+    mock_openai_class.return_value = mock_api
+
+    result = query_aiml_api(mock_api, "system prompt", "¿Qué es la IA? Décrire l'AA?", 2)
+    assert "¿Qué es la IA?" in result
+    assert "Décrire l'apprentissage automatique?" in result
