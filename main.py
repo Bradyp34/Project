@@ -1,7 +1,12 @@
 import streamlit as st
 from openai import OpenAI
-# Import the functions from utils
-from utils import query_aiml_api, extract_text_from_pdf, split_questions, parse_page_numbers
+from utils import (
+    query_aiml_api, 
+    extract_text_from_pdf, 
+    split_questions, 
+    parse_page_numbers, 
+    validate_page_input
+)
 
 API_KEY = "5b2403d04b544fae8b4263626dbf3d49"
 BASE_URL = "https://api.aimlapi.com/v1"
@@ -9,35 +14,68 @@ api = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 st.title("AI/ML GPT-4o-mini Study Question Generator")
 
+# Initialize session state variables if they do not exist
+if 'extracted_text' not in st.session_state:
+    st.session_state.extracted_text = None
+if 'text_visible' not in st.session_state:
+    st.session_state.text_visible = False
+
 uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
 if uploaded_file:
     page_input = st.text_input("Enter the page numbers (e.g., 1, 5-10, 15):")
 
     if page_input:
-        page_numbers = parse_page_numbers(page_input)
-        extracted_text = extract_text_from_pdf(uploaded_file, page_numbers)
+        valid_input, error_msg = validate_page_input(page_input)
+        if not valid_input:
+            st.warning(error_msg)
+        else:
+            page_numbers = parse_page_numbers(page_input)
 
-        st.subheader("Extracted Text from Selected Pages:")
-        st.text_area("Extracted Text", extracted_text, height=200)
+            if st.session_state.extracted_text is None:
+                st.session_state.extracted_text = extract_text_from_pdf(uploaded_file, page_numbers)
 
-        num_questions = st.number_input("How many questions would you like?", min_value=1, step=1)
+            # Determine the label for the button based on current visibility state
+            button_label = "Hide Extracted Text" if st.session_state.text_visible else "Show Extracted Text"
 
-        if st.button("Generate Questions"):
-            system_prompt = f"You are a helpful assistant. Based on the following text, generate {num_questions} study questions:"
-            user_input = extracted_text
-            questions_text = query_aiml_api(api, system_prompt, user_input, num_questions)
+            # Render the button
+            clicked = st.button(button_label)
+            
+            # If clicked, toggle the visibility state
+            if clicked:
+                st.session_state.text_visible = not st.session_state.text_visible
 
-            questions_list = split_questions(questions_text)
-            st.session_state.questions = questions_list[:num_questions]
-            st.session_state.answers = {}
-            st.session_state.evaluations = {}
+            # Display text if visible
+            if st.session_state.text_visible and st.session_state.extracted_text:
+                st.subheader("Extracted Text from Selected Pages:")
+                st.text_area("Extracted Text", st.session_state.extracted_text, height=200, disabled=True)
+
+            num_questions = st.number_input("How many questions would you like?", min_value=1, step=1)
+
+            if st.button("Generate Questions"):
+                system_prompt = (
+                    f"You are a helpful assistant. Based on the following text, "
+                    f"generate {num_questions} study questions:"
+                )
+                user_input = st.session_state.extracted_text or ""
+                if not user_input.strip():
+                    st.error("No extracted text available to generate questions from.")
+                else:
+                    questions_text = query_aiml_api(api, system_prompt, user_input, num_questions)
+                    questions_list = split_questions(questions_text)
+                    st.session_state.questions = questions_list[:num_questions]
+                    st.session_state.answers = {}
+                    st.session_state.evaluations = {}
 
 if st.session_state.get("questions"):
     st.subheader("Generated Questions:")
     for i, question in enumerate(st.session_state.questions):
         st.write(f"Question {i+1}: {question}")
-        answer = st.text_area(f"Your Answer for Question {i+1}", value=st.session_state.answers.get(i, ""), height=100)
+        answer = st.text_area(
+            f"Your Answer for Question {i+1}", 
+            value=st.session_state.answers.get(i, ""), 
+            height=100
+        )
         st.session_state.answers[i] = answer
 
         if st.button(f"Submit Answer for Question {i+1}"):
@@ -47,8 +85,18 @@ if st.session_state.get("questions"):
                 f"Answer: {answer}\n"
                 f"Provide a detailed evaluation of the answer."
             )
-            evaluation = query_aiml_api(api, "You are a helpful assistant that evaluates student answers.", eval_prompt, 1)
+            evaluation = query_aiml_api(
+                api, 
+                "You are a helpful assistant that evaluates student answers.", 
+                eval_prompt, 
+                1
+            )
             st.session_state.evaluations[i] = evaluation
 
         if i in st.session_state.evaluations:
-            st.text_area(f"Evaluation for Question {i+1}", st.session_state.evaluations[i], height=100, disabled=True)
+            st.text_area(
+                f"Evaluation for Question {i+1}", 
+                st.session_state.evaluations[i], 
+                height=100, 
+                disabled=True
+            )
