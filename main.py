@@ -22,6 +22,9 @@ if 'text_visible' not in st.session_state:
 
 uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
+def toggle_text_visibility():
+    st.session_state.text_visible = not st.session_state.text_visible
+
 if uploaded_file:
     page_input = st.text_input("Enter the page numbers (e.g., 1, 5-10, 15):")
 
@@ -35,17 +38,9 @@ if uploaded_file:
             if st.session_state.extracted_text is None:
                 st.session_state.extracted_text = extract_text_from_pdf(uploaded_file, page_numbers)
 
-            # Determine the label for the button based on current visibility state
             button_label = "Hide Extracted Text" if st.session_state.text_visible else "Show Extracted Text"
+            st.button(button_label, on_click=toggle_text_visibility)
 
-            # Render the button
-            clicked = st.button(button_label)
-            
-            # If clicked, toggle the visibility state
-            if clicked:
-                st.session_state.text_visible = not st.session_state.text_visible
-
-            # Display text if visible
             if st.session_state.text_visible and st.session_state.extracted_text:
                 st.subheader("Extracted Text from Selected Pages:")
                 st.text_area("Extracted Text", st.session_state.extracted_text, height=200, disabled=True)
