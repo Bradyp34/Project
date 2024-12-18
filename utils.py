@@ -19,10 +19,10 @@ def query_aiml_api(api, system_prompt, user_input, num_questions):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Please generate exactly {num_questions} study questions based on the following text:\n{user_input}"}
+                {"role": "user", "content": user_input}
             ],
             temperature=0.7,
-            max_tokens=500
+            max_tokens=1500  # Increased max_tokens to accommodate more detailed outputs
         )
         response = completion.choices[0].message.content
         return response.strip()
@@ -48,8 +48,10 @@ def extract_text_from_pdf(pdf_file, page_numbers):
                 page = pdf.pages[page_num - 1]
                 extracted = page.extract_text()
                 if extracted:
-                    text += extracted
-            # If out of range, we skip silently.
+                    text += extracted + "\n"
+            else:
+                # Log or handle out-of-range page numbers if necessary
+                pass
     return text
 
 def split_questions(text):
@@ -66,21 +68,29 @@ def split_questions(text):
     Returns:
         list: A list of question strings.
     """
-    # Adjust the regex to ensure question numbers are not preceded by letters.
-    question_pattern = r'(?<![A-Za-z])\d+\.\s+'
-    parts = re.split(question_pattern, text)
-
-    # If no pattern found, return empty list
-    if len(parts) == 1 and not re.search(question_pattern, text):
-        return []
-
-    # Strip whitespace and remove empty entries
-    questions = [q.strip() for q in parts if q.strip()]
-
-    # Filter out entries that are just something like '1.' or '2.' with no actual text
-    # This matches lines that are purely digits followed by a dot, with no extra text.
-    questions = [q for q in questions if not re.match(r'^\d+\.$', q)]
-
+    # Regex to match numbering at the beginning of lines
+    question_pattern = r'^\d+\.\s+'
+    questions = []
+    
+    # Split the text into lines
+    lines = text.split('\n')
+    current_question = ""
+    
+    for line in lines:
+        if re.match(question_pattern, line):
+            if current_question:
+                questions.append(current_question.strip())
+            # Remove the numbering
+            current_question = re.sub(question_pattern, '', line, count=1)
+        else:
+            current_question += ' ' + line.strip()
+    
+    if current_question:
+        questions.append(current_question.strip())
+    
+    # Filter out any empty questions
+    questions = [q for q in questions if q]
+    
     return questions
 
 def parse_page_numbers(page_input):
@@ -107,12 +117,16 @@ def parse_page_numbers(page_input):
         if "-" in part:
             start_str, end_str = part.split("-")
             start_str, end_str = start_str.strip(), end_str.strip()
+            if not (start_str.isdigit() and end_str.isdigit()):
+                raise ValueError(f"Invalid page range: {part}. Both start and end must be integers.")
             start, end = int(start_str), int(end_str)
             if start > end:
                 raise ValueError(f"Start page {start} cannot be greater than end page {end}.")
             pages.update(range(start, end + 1))
         else:
             # Only add if not empty and is a valid integer
+            if not part.isdigit():
+                raise ValueError(f"Invalid page number: {part}. Must be an integer.")
             pages.add(int(part))
     return sorted(pages)
 

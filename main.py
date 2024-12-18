@@ -49,7 +49,11 @@ def main_app():
             if not valid_input:
                 st.warning(error_msg)
             else:
-                page_numbers = parse_page_numbers(page_input)
+                try:
+                    page_numbers = parse_page_numbers(page_input)
+                except ValueError as ve:
+                    st.warning(str(ve))
+                    return
 
                 if st.session_state.extracted_text is None:
                     st.session_state.extracted_text = extract_text_from_pdf(uploaded_file, page_numbers)
@@ -61,25 +65,33 @@ def main_app():
                     st.subheader("Extracted Text from Selected Pages:")
                     st.text_area("Extracted Text", st.session_state.extracted_text, height=200, disabled=True)
 
-                num_questions = st.number_input("How many questions would you like?", min_value=1, step=1)
+                num_questions = st.number_input("How many questions would you like?", min_value=1, step=1, value=5)
 
                 if st.button("Generate Questions"):
                     system_prompt = (
-                        f"You are a helpful assistant. Based on the following text, "
-                        f"generate {num_questions} study questions:"
-                    )
+                        "You are ChatGPT, a large language model trained by OpenAI. "
+                        "You are tasked with generating study questions based on provided text. "
+                        "Please format the questions as a numbered list, with each question on a new line, "
+                        "prefixed by its number and a period (e.g., '1. What is...?'). "
+                        "Ensure there are exactly {num_questions} questions."
+                    ).format(num_questions=num_questions)
+                    
                     user_input = st.session_state.extracted_text or ""
                     if not user_input.strip():
                         st.error("No extracted text available to generate questions from.")
                     else:
                         questions_text = query_aiml_api(api, system_prompt, user_input, num_questions)
                         questions_list = split_questions(questions_text)
+                        
+                        if len(questions_list) < num_questions:
+                            st.warning(f"Expected {num_questions} questions, but only {len(questions_list)} were generated.")
+                        
                         st.session_state.questions = questions_list[:num_questions]
 
     if st.session_state.get("questions"):
         st.subheader("Generated Questions:")
         for i, question in enumerate(st.session_state.questions):
-            st.write(f"Question {i+1}: {question}")
+            st.write(f"**Question {i+1}:** {question}")
             answer = st.text_area(
                 f"Your Answer for Question {i+1}", 
                 value=st.session_state.answers.get(i, ""), 
@@ -89,10 +101,12 @@ def main_app():
 
             if st.button(f"Submit Answer for Question {i+1}"):
                 eval_prompt = (
-                    f"Please evaluate the following answer and provide feedback.\n\n"
-                    f"Question: {question}\n"
-                    f"Answer: {answer}\n"
-                    f"Provide a detailed evaluation of the answer."
+                    "You are ChatGPT, a large language model trained by OpenAI. "
+                    "You are tasked with evaluating student answers to study questions. "
+                    "Please provide a detailed evaluation of the answer, including strengths, areas for improvement, and overall correctness.\n\n"
+                    f"**Question {i+1}:** {question}\n"
+                    f"**Answer:** {answer}\n\n"
+                    "**Evaluation:**"
                 )
                 evaluation = query_aiml_api(
                     api, 
@@ -104,7 +118,7 @@ def main_app():
 
             if i in st.session_state.evaluations:
                 st.text_area(
-                    f"Evaluation for Question {i+1}", 
+                    f"**Evaluation for Question {i+1}:**", 
                     st.session_state.evaluations[i], 
                     height=100, 
                     disabled=True
