@@ -9,7 +9,7 @@ from utils import (
     validate_page_input
 )
 
-API_KEY = "5b2403d04b544fae8b4263626dbf3d49"
+API_KEY = st.secrets["API_KEY"]
 BASE_URL = "https://api.aimlapi.com/v1"
 api = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
